@@ -305,7 +305,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hidden { display: none !important; }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #14171f;
     --surface: #1c202c;
     --border: #2b3040;
@@ -316,4 +316,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
     --warning-tint: #3a2a0d;
     --danger-tint: #3a1414;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #14171f;
+  --surface: #1c202c;
+  --border: #2b3040;
+  --text: #edeff5;
+  --muted: #9aa1b1;
+  --primary-tint: #1c2b4a;
+  --success-tint: #0f2f1e;
+  --warning-tint: #3a2a0d;
+  --danger-tint: #3a1414;
+}
+
+.corner-icons {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 40;
 }

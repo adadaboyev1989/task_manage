@@ -9,6 +9,43 @@
     setTimeout(() => el.remove(), 3000);
   };
 
+  const THEME_KEY = 'theme-preference';
+
+  App.currentTheme = function () {
+    const explicit = document.documentElement.getAttribute('data-theme');
+    if (explicit === 'dark' || explicit === 'light') return explicit;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  };
+
+  App.toggleTheme = function () {
+    const next = App.currentTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // private browsing / storage disabled — theme just won't persist
+    }
+    return next;
+  };
+
+  App.initThemeToggle = function (btn) {
+    if (!btn) return;
+    function sync() {
+      const dark = App.currentTheme() === 'dark';
+      btn.textContent = dark ? '☀️' : '🌙';
+      btn.title = dark ? "Yorug' mavzu" : "Qorong'i mavzu";
+    }
+    btn.addEventListener('click', () => {
+      App.toggleTheme();
+      sync();
+    });
+    sync();
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    App.initThemeToggle(document.getElementById('btn-theme'));
+  });
+
   App.api = async function (path, options = {}) {
     const res = await fetch(path, {
       credentials: 'include',
