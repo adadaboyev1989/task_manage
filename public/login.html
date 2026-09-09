@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Kirish — Topshiriqlar nazorati</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#2451B4" />
+  <link rel="icon" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div class="login-shell">
+    <div class="card login-card">
+      <img src="/icons/icon-192.png" alt="logo" />
+      <h1>Topshiriqlar nazorati tizimi</h1>
+      <p>Namangan shahar maktabgacha va maktab ta'limi bo'limi</p>
+
+      <div id="step-start">
+        <a class="btn block" id="btn-open-telegram" href="#">📲 Telegram orqali kirish</a>
+        <p class="hint" style="margin-top:12px">Tugmani bosgach Telegram ochiladi. Botni ishga tushiring — tizimga avtomatik kirasiz.</p>
+      </div>
+
+      <div id="step-waiting" class="hidden">
+        <div style="margin: 10px 0"><span class="spinner" style="border-top-color:var(--primary); border-color:rgba(36,81,180,0.2)"></span></div>
+        <p>Telegramda tasdiqlashni kutmoqdamiz...</p>
+        <button class="btn secondary block" id="btn-cancel-wait">Bekor qilish</button>
+      </div>
+
+      <div id="step-expired" class="hidden">
+        <p>⏱ Havola muddati tugadi.</p>
+        <button class="btn block" id="btn-retry">Qayta urinish</button>
+      </div>
+
+      <div id="dev-panel" class="hidden" style="margin-top:24px; border-top:1px dashed var(--border); padding-top:16px; text-align:left">
+        <p class="hint"><b>Dasturchi rejimi</b> — BOT_TOKEN sozlanmagan. Test uchun foydalanuvchi tanlang:</p>
+        <div class="field">
+          <select id="dev-user-select"></select>
+        </div>
+        <button class="btn secondary block" id="btn-dev-login">Shu foydalanuvchi sifatida kirish</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/pwa.js"></script>
+  <script>
+    const stepStart = document.getElementById('step-start');
+    const stepWaiting = document.getElementById('step-waiting');
+    const stepExpired = document.getElementById('step-expired');
+    const devPanel = document.getElementById('dev-panel');
+
+    let currentToken = null;
+    let pollTimer = null;
+
+    function show(step) {
+      [stepStart, stepWaiting, stepExpired].forEach((el) => el.classList.add('hidden'));
+      step.classList.remove('hidden');
+    }
+
+    async function redirectByRole(user) {
+      window.location.href = user.role === 'admin' ? '/admin/' : '/';
+    }
+
+    async function startLogin() {
+      const { token, deepLink, botConfigured } = await App.api('/api/auth/telegram/start', { method: 'POST' });
+      currentToken = token;
+      const openBtn = document.getElementById('btn-open-telegram');
+      if (deepLink) {
+        // A real anchor navigation (not window.open) is what reliably hands off
+        // to the Telegram app on mobile browsers for a https://t.me/... link.
+        openBtn.href = deepLink;
+      }
+      openBtn.onclick = (e) => {
+        if (!deepLink) {
+          e.preventDefault();
+          App.toast('Telegram bot hali sozlanmagan. Administratorga murojaat qiling.');
+          return;
+        }
+        show(stepWaiting);
+        beginPolling();
+      };
+
+      if (!botConfigured) {
+        devPanel.classList.remove('hidden');
+        const users = await App.api('/api/auth/dev/users');
+        const select = document.getElementById('dev-user-select');
+        select.innerHTML = users.map((u) => `<option value="${u.id}">${u.fullName} (${u.role})</option>`).join('');
+        document.getElementById('btn-dev-login').onclick = async () => {
+          const userId = Number(select.value);
+          await App.api('/api/auth/dev/verify', { method: 'POST', body: { token: currentToken, userId } });
+          await finishLogin();
+        };
+      } else {
+        devPanel.classList.add('hidden');
+      }
+    }
+
+    async function finishLogin() {
+      try {
+        const { user } = await App.api('/api/auth/telegram/exchange', { method: 'POST', body: { token: currentToken } });
+        clearInterval(pollTimer);
+        redirectByRole(user);
+      } catch (err) {
+        App.toast(err.message);
+      }
+    }
+
+    function beginPolling() {
+      clearInterval(pollTimer);
+      pollTimer = setInterval(async () => {
+        const { status } = await App.api(`/api/auth/telegram/status/${currentToken}`);
+        if (status === 'verified') {
+          await finishLogin();
+        } else if (status === 'expired') {
+          clearInterval(pollTimer);
+          show(stepExpired);
+        }
+      }, 2000);
+    }
+
+    document.getElementById('btn-cancel-wait').onclick = () => {
+      clearInterval(pollTimer);
+      show(stepStart);
+    };
+    document.getElementById('btn-retry').onclick = () => {
+      show(stepStart);
+      startLogin();
+    };
+
+    // Already logged in? skip straight to the app.
+    App.api('/api/auth/me')
+      .then(({ user }) => redirectByRole(user))
+      .catch(() => startLogin());
+  </script>
+</body>
+</html>

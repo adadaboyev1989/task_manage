@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Admin panelga kirish</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#2451B4" />
+  <link rel="icon" href="/favicon.png" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div class="login-shell">
+    <div class="card login-card">
+      <img src="/icons/icon-192.png" alt="logo" />
+      <h1>Admin panel</h1>
+      <p>Login va parolingizni kiriting</p>
+
+      <form id="login-form" style="text-align:left">
+        <div class="field">
+          <label>Login</label>
+          <input type="text" id="f-username" autocomplete="username" required autofocus />
+        </div>
+        <div class="field">
+          <label>Parol</label>
+          <input type="password" id="f-password" autocomplete="current-password" required />
+        </div>
+        <button class="btn block" type="submit" id="btn-submit">Kirish</button>
+      </form>
+
+      <p class="hint" style="margin-top:16px">
+        Telegram orqali kirmoqchimisiz? <a href="/login">Bu yerga bosing</a>
+      </p>
+    </div>
+  </div>
+
+  <script src="/js/pwa.js"></script>
+  <script>
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit');
+      btn.disabled = true;
+      try {
+        await App.api('/api/auth/admin-login', {
+          method: 'POST',
+          body: {
+            username: document.getElementById('f-username').value,
+            password: document.getElementById('f-password').value,
+          },
+        });
+        window.location.href = '/admin/';
+      } catch (err) {
+        App.toast(err.message);
+        btn.disabled = false;
+      }
+    });
+
+    App.api('/api/auth/me')
+      .then(({ user }) => {
+        if (user.role === 'admin') window.location.href = '/admin/';
+      })
+      .catch(() => {});
+  </script>
+</body>
+</html>

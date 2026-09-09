@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Admin panel — Topshiriqlar nazorati</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#2451B4" />
+  <link rel="icon" href="/favicon.png" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <img src="/icons/icon-192.png" alt="logo" />
+      <span>Admin panel</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px">
+      <a class="btn secondary small" href="/">← Ilovaga qaytish</a>
+      <button class="btn secondary small" id="btn-logout">Chiqish</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="users">Foydalanuvchilar</button>
+      <button class="tab-btn" data-tab="orgs">Tashkilotlar</button>
+      <button class="tab-btn" data-tab="stats">Statistika</button>
+    </div>
+    <div id="tab-content"></div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/js/pwa.js"></script>
+  <script src="/admin/app.js"></script>
+</body>
+</html>
