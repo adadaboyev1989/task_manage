@@ -23,6 +23,10 @@ class CreateTaskBody(BaseModel):
     orgIds: list[int]
 
 
+class AssignCloserBody(BaseModel):
+    userId: Optional[int] = None
+
+
 def _task_with_targets(db, task_id: int) -> Optional[dict]:
     task_row = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if not task_row:
@@ -40,9 +44,18 @@ def _task_with_targets(db, task_id: int) -> Optional[dict]:
     ).fetchall()
     creator = db.execute("SELECT id, full_name FROM users WHERE id = ?", (task["created_by"],)).fetchone()
 
+    additional_closer = None
+    if task.get("additional_closer_id"):
+        closer_row = db.execute(
+            "SELECT id, full_name FROM users WHERE id = ?", (task["additional_closer_id"],)
+        ).fetchone()
+        if closer_row:
+            additional_closer = {"id": closer_row["id"], "fullName": closer_row["full_name"]}
+
     task["targets"] = [dict(t) for t in targets]
     task["attachments"] = [dict(a) for a in attachments]
     task["creator"] = dict(creator) if creator else None
+    task["additionalCloser"] = additional_closer
     return task
 
 
@@ -254,7 +267,11 @@ def close_target(task_id: int, org_id: int, current_user: dict = Depends(require
         raise HTTPException(status_code=404, detail="Topshiriq topilmadi")
     if task["type"] != "control":
         raise HTTPException(status_code=400, detail="Bu topshiriqni yechish shart emas")
-    if current_user["role"] != "admin" and task["created_by"] != current_user["id"]:
+    if (
+        current_user["role"] != "admin"
+        and task["created_by"] != current_user["id"]
+        and task["additional_closer_id"] != current_user["id"]
+    ):
         raise HTTPException(status_code=403, detail="Faqat shu topshiriqni bergan xodim yoki administrator nazoratdan yechishi mumkin")
 
     target = db.execute("SELECT * FROM task_targets WHERE task_id = ? AND org_id = ?", (task_id, org_id)).fetchone()
@@ -265,6 +282,27 @@ def close_target(task_id: int, org_id: int, current_user: dict = Depends(require
         "UPDATE task_targets SET status = 'closed', completed_at = datetime('now'), completed_by = ? WHERE id = ?",
         (current_user["id"], target["id"]),
     )
+    db.commit()
+    return _task_with_targets(db, task_id)
+
+
+@router.patch("/api/tasks/{task_id}/assign-closer")
+def assign_closer(task_id: int, body: AssignCloserBody, current_user: dict = Depends(require_roles("admin"))):
+    db = get_db()
+    task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if not task:
+        raise HTTPException(status_code=404, detail="Topshiriq topilmadi")
+    if task["type"] != "control":
+        raise HTTPException(status_code=400, detail="Bu faqat nazoratdagi topshiriqlar uchun mumkin")
+
+    if body.userId is not None:
+        user = db.execute(
+            "SELECT * FROM users WHERE id = ? AND role = 'department' AND is_active = 1", (body.userId,)
+        ).fetchone()
+        if not user:
+            raise HTTPException(status_code=400, detail="Bo'lim xodimi topilmadi")
+
+    db.execute("UPDATE tasks SET additional_closer_id = ? WHERE id = ?", (body.userId, task_id))
     db.commit()
     return _task_with_targets(db, task_id)
 

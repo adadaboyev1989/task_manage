@@ -104,6 +104,12 @@ def _connect():
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
     conn.commit()
+
+    existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+    if "additional_closer_id" not in existing_cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN additional_closer_id INTEGER REFERENCES users(id)")
+        conn.commit()
+
     return conn
 
 

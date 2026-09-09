@@ -143,7 +143,10 @@
             : ''
         }`;
     } else {
-      const canClose = ME.role === 'admin' || (ME.role === 'department' && task.created_by === ME.id);
+      const canClose =
+        ME.role === 'admin' ||
+        (ME.role === 'department' &&
+          (task.created_by === ME.id || (task.additionalCloser && task.additionalCloser.id === ME.id)));
       targetsHtml = `<div class="section-title">Tashkilotlar (${task.targets.length})</div>
         <div class="table-wrap"><table class="org-table"><thead><tr><th>Tashkilot</th><th>Holat</th>${task.type === 'control' ? '<th></th>' : ''}</tr></thead>
         <tbody>${task.targets
@@ -163,7 +166,13 @@
           task.type === 'control' && !canClose && task.targets.some((t) => t.status === 'pending')
             ? '<p class="hint muted">Faqat shu topshiriqni bergan xodim yoki administrator nazoratdan yecha oladi.</p>'
             : ''
-        }`;
+        }
+        ${
+          task.type === 'control' && task.additionalCloser
+            ? `<p class="hint muted">Qo'shimcha ruxsat: ${esc(task.additionalCloser.fullName)}</p>`
+            : ''
+        }
+        ${task.type === 'control' && ME.role === 'admin' ? '<div id="assign-closer-block"></div>' : ''}`;
     }
 
     openModal(`
@@ -259,6 +268,49 @@
     };
 
     document.getElementById('btn-share').onclick = () => shareTaskToTelegram(task);
+
+    if (task.type === 'control' && ME.role === 'admin') {
+      renderAssignCloserBlock(task);
+    }
+  }
+
+  async function renderAssignCloserBlock(task) {
+    const block = document.getElementById('assign-closer-block');
+    if (!block) return;
+    let users;
+    try {
+      users = await App.api('/api/users?role=department');
+    } catch (err) {
+      return;
+    }
+    const options = users
+      .filter((u) => u.id !== task.created_by)
+      .map(
+        (u) =>
+          `<option value="${u.id}" ${task.additionalCloser && task.additionalCloser.id === u.id ? 'selected' : ''}>${esc(u.fullName)}</option>`
+      )
+      .join('');
+    block.innerHTML = `<div class="section-title">Qo'shimcha nazoratdan yechish huquqi</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+        <select id="assign-closer-select">
+          <option value="">— Tanlanmagan —</option>
+          ${options}
+        </select>
+        <button class="btn secondary small" id="btn-assign-closer-save">Saqlash</button>
+      </div>`;
+    document.getElementById('btn-assign-closer-save').onclick = async () => {
+      const val = document.getElementById('assign-closer-select').value;
+      try {
+        await App.api(`/api/tasks/${task.id}/assign-closer`, {
+          method: 'PATCH',
+          body: { userId: val ? Number(val) : null },
+        });
+        App.toast('Saqlandi ✅');
+        openTaskModal(task.id);
+      } catch (err) {
+        App.toast(err.message);
+      }
+    };
   }
 
   async function shareTaskToTelegram(task) {
