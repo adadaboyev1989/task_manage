@@ -220,13 +220,22 @@ def delete_user(user_id: int, current_user: dict = Depends(require_roles("admin"
         or db.execute("SELECT 1 FROM attachments WHERE uploaded_by = ? LIMIT 1", (user_id,)).fetchone()
         or db.execute("SELECT 1 FROM task_targets WHERE completed_by = ? LIMIT 1", (user_id,)).fetchone()
     )
-    if has_activity:
-        raise HTTPException(
-            status_code=400,
-            detail="Bu foydalanuvchi bilan bog'liq topshiriqlar yoki fayllar mavjud, shuning uchun o'chirib bo'lmaydi. Uni bloklashingiz mumkin.",
-        )
 
     db.execute("UPDATE orgs SET director_user_id = NULL WHERE director_user_id = ?", (user_id,))
+
+    if has_activity:
+        # Can't hard-delete without breaking the task/attachment history that still
+        # references this user (e.g. "created by", "closed by"). Instead, scrub every
+        # personal/login field and deactivate — the account is gone for all practical
+        # purposes (can't log in, no contact info left), but old records still resolve.
+        db.execute(
+            """UPDATE users SET full_name = ?, phone = NULL, telegram_chat_id = NULL, telegram_username = NULL,
+               username = NULL, password_hash = NULL, is_active = 0 WHERE id = ?""",
+            ("O'chirilgan foydalanuvchi", user_id),
+        )
+        db.commit()
+        return {"ok": True, "anonymized": True}
+
     db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "anonymized": False}

@@ -95,10 +95,14 @@
     content.querySelectorAll('.btn-delete-user').forEach((btn) => {
       btn.onclick = async () => {
         const user = USERS.find((u) => String(u.id) === btn.dataset.id);
-        if (!confirm(`"${user?.fullName || ''}" foydalanuvchisini butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi.`)) return;
+        if (!confirm(`"${user?.fullName || ''}" foydalanuvchisini o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi.`)) return;
         try {
-          await App.api(`/api/users/${btn.dataset.id}`, { method: 'DELETE' });
-          App.toast("Foydalanuvchi o'chirildi ✅");
+          const result = await App.api(`/api/users/${btn.dataset.id}`, { method: 'DELETE' });
+          App.toast(
+            result.anonymized
+              ? "Foydalanuvchi o'chirildi ✅ (topshiriqlar tarixi saqlab qolindi)"
+              : "Foydalanuvchi butunlay o'chirildi ✅"
+          );
           renderUsersTab();
         } catch (err) {
           App.toast(err.message);
@@ -370,11 +374,57 @@
     `;
   }
 
+  // ---------- Storage / cleanup tab ----------
+  function formatBytes(bytes) {
+    if (!bytes) return '0 MB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  async function renderStorageTab() {
+    const content = document.getElementById('tab-content');
+    content.innerHTML = `<div class="empty-state">Yuklanmoqda...</div>`;
+    const storage = await App.api('/api/admin/storage');
+    content.innerHTML = `
+      <div class="stat-grid">
+        <div class="stat-tile accent-primary"><div class="num">${storage.fileCount}</div><div class="label">Jami fayllar</div></div>
+        <div class="stat-tile accent-primary"><div class="num">${formatBytes(storage.totalSizeBytes)}</div><div class="label">Egallagan hajm</div></div>
+        <div class="stat-tile accent-warning"><div class="num">${storage.cleanupEligibleCount}</div><div class="label">Tozalash mumkin (90+ kun, yakunlangan)</div></div>
+        <div class="stat-tile accent-warning"><div class="num">${formatBytes(storage.cleanupEligibleSizeBytes)}</div><div class="label">Bo'shaydigan joy</div></div>
+      </div>
+      <div class="card card-pad">
+        <div class="section-title" style="margin-top:0">Eski fayllarni tozalash</div>
+        <p class="hint muted">
+          Faqat <b>to'liq yakunlangan</b> (barcha tashkilotlarda nazoratdan yechilgan yoki bajarilgan)
+          topshiriqlarning fayllari o'chiriladi. Hali kutilayotgan (faol) topshiriqlarning fayllariga tegilmaydi.
+          Topshiriqning o'zi (matni, tarixi) saqlanib qoladi — faqat biriktirilgan fayllar o'chiriladi.
+        </p>
+        <div class="field" style="max-width:220px">
+          <label>Necha kundan eski</label>
+          <input type="number" id="f-cleanup-days" value="90" min="0" />
+        </div>
+        <button class="btn danger" id="btn-cleanup">🗑️ Fayllarni tozalash</button>
+      </div>
+    `;
+
+    document.getElementById('btn-cleanup').onclick = async () => {
+      const days = Number(document.getElementById('f-cleanup-days').value) || 0;
+      if (!confirm(`${days} kundan eski, yakunlangan topshiriqlarning fayllari butunlay o'chiriladi. Davom etasizmi?`)) return;
+      try {
+        const result = await App.api('/api/admin/cleanup-files', { method: 'POST', body: { olderThanDays: days } });
+        App.toast(`${result.deletedCount} ta fayl o'chirildi, ${formatBytes(result.freedBytes)} bo'shadi ✅`);
+        renderStorageTab();
+      } catch (err) {
+        App.toast(err.message);
+      }
+    };
+  }
+
   // ---------- shell ----------
   function setTab(tab) {
     document.querySelectorAll('.tabs .tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     if (tab === 'users') renderUsersTab();
     else if (tab === 'orgs') renderOrgsTab();
+    else if (tab === 'storage') renderStorageTab();
     else renderStatsTab();
   }
 

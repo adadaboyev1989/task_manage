@@ -11,6 +11,7 @@ from app.db import get_db
 from app.security import COOKIE_NAME, verify_session_token
 
 from app.routers import auth as auth_router
+from app.routers import maintenance as maintenance_router
 from app.routers import orgs as orgs_router
 from app.routers import push as push_router
 from app.routers import stats as stats_router
@@ -46,6 +47,7 @@ app.include_router(orgs_router.router)
 app.include_router(users_router.router)
 app.include_router(stats_router.router)
 app.include_router(push_router.router)
+app.include_router(maintenance_router.router)
 
 
 @app.get("/admin/login")

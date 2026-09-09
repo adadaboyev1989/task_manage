@@ -163,7 +163,7 @@
       <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap">
         <label class="btn secondary small">
           📎 Fayl biriktirish
-          <input type="file" id="file-input" style="display:none" />
+          <input type="file" id="file-input" multiple style="display:none" />
         </label>
         <a class="btn secondary small" id="btn-telegram-attach" href="#">✈️ Telegramdan biriktirish</a>
         <button class="btn secondary small" id="btn-share">📤 Ulashish</button>
@@ -198,13 +198,13 @@
     });
 
     document.getElementById('file-input').onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+      const files = [...e.target.files];
+      if (!files.length) return;
       const fd = new FormData();
-      fd.append('file', file);
+      files.forEach((f) => fd.append('files', f));
       try {
         await App.api(`/api/tasks/${task.id}/attachments`, { method: 'POST', body: fd });
-        App.toast('Fayl biriktirildi ✅');
+        App.toast(files.length > 1 ? `${files.length} ta fayl biriktirildi ✅` : 'Fayl biriktirildi ✅');
         openTaskModal(task.id);
       } catch (err) {
         App.toast(err.message);
@@ -456,8 +456,8 @@
           </div>
         </div>
         <div class="field">
-          <label>Fayl biriktirish <span class="muted">(ixtiyoriy)</span></label>
-          <input type="file" id="f-file" />
+          <label>Fayl biriktirish <span class="muted">(ixtiyoriy, bir nechta tanlash mumkin)</span></label>
+          <input type="file" id="f-file" multiple />
         </div>
         <button class="btn block" type="submit">Yuborish</button>
       </form>
@@ -499,10 +499,10 @@
       try {
         const task = await App.api('/api/tasks', { method: 'POST', body: payload });
 
-        const file = document.getElementById('f-file').files[0];
-        if (file) {
+        const files = [...document.getElementById('f-file').files];
+        if (files.length) {
           const fd = new FormData();
-          fd.append('file', file);
+          files.forEach((f) => fd.append('files', f));
           try {
             await App.api(`/api/tasks/${task.id}/attachments`, { method: 'POST', body: fd });
           } catch (err) {

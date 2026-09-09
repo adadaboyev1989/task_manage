@@ -232,7 +232,9 @@ def close_target(task_id: int, org_id: int, current_user: dict = Depends(require
 
 
 @router.post("/api/tasks/{task_id}/attachments", status_code=201)
-async def upload_attachment(task_id: int, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+async def upload_attachment(
+    task_id: int, files: list[UploadFile] = File(...), current_user: dict = Depends(get_current_user)
+):
     db = get_db()
     task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if not task:
@@ -245,22 +247,31 @@ async def upload_attachment(task_id: int, file: UploadFile = File(...), current_
         if not owns:
             raise HTTPException(status_code=403, detail="Ruxsat yo'q")
 
-    contents = await file.read()
     max_size = 25 * 1024 * 1024
-    if len(contents) > max_size:
-        raise HTTPException(status_code=400, detail="Fayl hajmi 25MB dan katta")
+    saved = []
+    try:
+        for file in files:
+            contents = await file.read()
+            if len(contents) > max_size:
+                raise HTTPException(status_code=400, detail=f"\"{file.filename}\" hajmi 25MB dan katta")
 
-    ext = Path(file.filename or "").suffix
-    stored_name = f"{uuid.uuid4()}{ext}"
-    (UPLOAD_DIR / stored_name).write_bytes(contents)
+            ext = Path(file.filename or "").suffix
+            stored_name = f"{uuid.uuid4()}{ext}"
+            (UPLOAD_DIR / stored_name).write_bytes(contents)
+            saved.append(stored_name)
 
-    db.execute(
-        """INSERT INTO attachments (task_id, original_name, stored_name, mime_type, size, source, uploaded_by)
-           VALUES (?, ?, ?, ?, ?, 'upload', ?)""",
-        (task_id, file.filename, stored_name, file.content_type, len(contents), current_user["id"]),
-    )
+            db.execute(
+                """INSERT INTO attachments (task_id, original_name, stored_name, mime_type, size, source, uploaded_by)
+                   VALUES (?, ?, ?, ?, ?, 'upload', ?)""",
+                (task_id, file.filename, stored_name, file.content_type, len(contents), current_user["id"]),
+            )
+    except HTTPException:
+        for stored_name in saved:
+            (UPLOAD_DIR / stored_name).unlink(missing_ok=True)
+        db.rollback()
+        raise
+
     db.commit()
-
     return _task_with_targets(db, task_id)
 
 
