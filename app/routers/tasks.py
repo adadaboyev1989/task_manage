@@ -65,23 +65,23 @@ def list_tasks(
 
     if current_user["role"] == "director":
         rows = db.execute(
-            """SELECT t.*, tt.status AS target_status, tt.completed_at, tt.org_id
-               FROM task_targets tt JOIN tasks t ON t.id = tt.task_id
+            """SELECT t.*, tt.status AS target_status, tt.completed_at, tt.org_id, u.full_name AS creator_name
+               FROM task_targets tt JOIN tasks t ON t.id = tt.task_id JOIN users u ON u.id = t.created_by
                WHERE tt.org_id = ? ORDER BY t.created_at DESC""",
             (current_user["org_id"],),
         ).fetchall()
     else:
         if orgId:
             rows = db.execute(
-                """SELECT t.*, tt.status AS target_status, tt.completed_at, tt.org_id, o.name AS org_name, o.type AS org_type
-                   FROM task_targets tt JOIN tasks t ON t.id = tt.task_id JOIN orgs o ON o.id = tt.org_id
+                """SELECT t.*, tt.status AS target_status, tt.completed_at, tt.org_id, o.name AS org_name, o.type AS org_type, u.full_name AS creator_name
+                   FROM task_targets tt JOIN tasks t ON t.id = tt.task_id JOIN orgs o ON o.id = tt.org_id JOIN users u ON u.id = t.created_by
                    WHERE tt.org_id = ? ORDER BY t.created_at DESC""",
                 (orgId,),
             ).fetchall()
         else:
             rows = db.execute(
-                """SELECT t.*, tt.status AS target_status, tt.completed_at, tt.org_id, o.name AS org_name, o.type AS org_type
-                   FROM task_targets tt JOIN tasks t ON t.id = tt.task_id JOIN orgs o ON o.id = tt.org_id
+                """SELECT t.*, tt.status AS target_status, tt.completed_at, tt.org_id, o.name AS org_name, o.type AS org_type, u.full_name AS creator_name
+                   FROM task_targets tt JOIN tasks t ON t.id = tt.task_id JOIN orgs o ON o.id = tt.org_id JOIN users u ON u.id = t.created_by
                    ORDER BY t.created_at DESC"""
             ).fetchall()
 
@@ -102,6 +102,7 @@ def list_tasks(
                 "status": r["target_status"],
                 "completedAt": r["completed_at"],
                 "overdue": overdue,
+                "createdByName": r["creator_name"],
             }
         )
 

@@ -203,3 +203,30 @@ def update_user(user_id: int, body: UpdateUserBody):
     )
     db.commit()
     return _public_user(_user_with_org(db, user_id))
+
+
+@router.delete("/{user_id}")
+def delete_user(user_id: int, current_user: dict = Depends(require_roles("admin"))):
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="O'zingizni o'chira olmaysiz")
+
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="Topilmadi")
+
+    has_activity = (
+        db.execute("SELECT 1 FROM tasks WHERE created_by = ? LIMIT 1", (user_id,)).fetchone()
+        or db.execute("SELECT 1 FROM attachments WHERE uploaded_by = ? LIMIT 1", (user_id,)).fetchone()
+        or db.execute("SELECT 1 FROM task_targets WHERE completed_by = ? LIMIT 1", (user_id,)).fetchone()
+    )
+    if has_activity:
+        raise HTTPException(
+            status_code=400,
+            detail="Bu foydalanuvchi bilan bog'liq topshiriqlar yoki fayllar mavjud, shuning uchun o'chirib bo'lmaydi. Uni bloklashingiz mumkin.",
+        )
+
+    db.execute("UPDATE orgs SET director_user_id = NULL WHERE director_user_id = ?", (user_id,))
+    db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    db.commit()
+    return {"ok": True}

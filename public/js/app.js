@@ -59,7 +59,11 @@
           </div>
         </div>
       </div>
-      ${t.deadlineAt ? `<div class="meta">⏰ ${formatDT(t.deadlineAt)}</div>` : ''}
+      ${
+        t.deadlineAt || t.createdByName
+          ? `<div class="meta">${t.deadlineAt ? `⏰ ${formatDT(t.deadlineAt)}` : ''}${t.createdByName ? `<span>👤 ${esc(t.createdByName)}</span>` : ''}</div>`
+          : ''
+      }
     </li>`;
   }
 
@@ -405,6 +409,10 @@
               .join('')}
           </div>
         </div>
+        <div class="field">
+          <label>Fayl biriktirish <span class="muted">(ixtiyoriy)</span></label>
+          <input type="file" id="f-file" />
+        </div>
         <button class="btn block" type="submit">Yuborish</button>
       </form>
     `);
@@ -443,7 +451,22 @@
         orgIds,
       };
       try {
-        await App.api('/api/tasks', { method: 'POST', body: payload });
+        const task = await App.api('/api/tasks', { method: 'POST', body: payload });
+
+        const file = document.getElementById('f-file').files[0];
+        if (file) {
+          const fd = new FormData();
+          fd.append('file', file);
+          try {
+            await App.api(`/api/tasks/${task.id}/attachments`, { method: 'POST', body: fd });
+          } catch (err) {
+            App.toast(`Topshiriq yuborildi, lekin fayl biriktirilmadi: ${err.message}`);
+            closeModal();
+            refreshCurrentView();
+            return;
+          }
+        }
+
         App.toast('Topshiriq yuborildi ✅');
         closeModal();
         refreshCurrentView();

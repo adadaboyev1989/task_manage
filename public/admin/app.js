@@ -59,9 +59,11 @@
             <td>${u.role === 'admin' ? (u.username ? `🔑 ${esc(u.username)}` : '<span class="muted">Yo\'q</span>') : '<span class="muted">—</span>'}</td>
             <td>${u.isActive ? '<span class="badge closed">Faol</span>' : '<span class="badge overdue">Faolsiz</span>'}</td>
             <td style="white-space:nowrap">
+              <button class="btn secondary small btn-edit-user" data-id="${u.id}">Tahrirlash</button>
               <button class="btn secondary small btn-edit-telegram" data-id="${u.id}" data-tgid="${esc(u.telegramChatId)}">Telegram ID</button>
               ${u.role === 'admin' ? `<button class="btn secondary small btn-edit-credentials" data-id="${u.id}" data-username="${esc(u.username || '')}">Login-parol</button>` : ''}
               <button class="btn secondary small btn-toggle" data-id="${u.id}" data-active="${u.isActive ? 1 : 0}">${u.isActive ? 'Bloklash' : 'Faollashtirish'}</button>
+              <button class="btn danger small btn-delete-user" data-id="${u.id}">O'chirish</button>
             </td>
           </tr>`
         ).join('')}</tbody>
@@ -75,6 +77,9 @@
     content.innerHTML = usersTableHtml();
 
     document.getElementById('btn-new-user').onclick = openCreateUserModal;
+    content.querySelectorAll('.btn-edit-user').forEach((btn) => {
+      btn.onclick = () => openEditUserModal(btn.dataset.id);
+    });
     content.querySelectorAll('.btn-edit-telegram').forEach((btn) => {
       btn.onclick = () => openEditTelegramIdModal(btn.dataset.id, btn.dataset.tgid);
     });
@@ -86,6 +91,58 @@
         await App.api(`/api/users/${btn.dataset.id}`, { method: 'PATCH', body: { isActive: btn.dataset.active !== '1' } });
         renderUsersTab();
       };
+    });
+    content.querySelectorAll('.btn-delete-user').forEach((btn) => {
+      btn.onclick = async () => {
+        const user = USERS.find((u) => String(u.id) === btn.dataset.id);
+        if (!confirm(`"${user?.fullName || ''}" foydalanuvchisini butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi.`)) return;
+        try {
+          await App.api(`/api/users/${btn.dataset.id}`, { method: 'DELETE' });
+          App.toast("Foydalanuvchi o'chirildi ✅");
+          renderUsersTab();
+        } catch (err) {
+          App.toast(err.message);
+        }
+      };
+    });
+  }
+
+  function openEditUserModal(userId) {
+    const user = USERS.find((u) => String(u.id) === String(userId));
+    if (!user) return;
+    const freeOrgs = ORGS.filter((o) => !o.director || o.director.id === user.id);
+
+    openModal(`
+      <div class="modal-head"><h3 class="modal-title">Foydalanuvchini tahrirlash</h3><button class="close-btn" data-close>&times;</button></div>
+      <form id="edit-user-form">
+        <div class="field"><label>To'liq ism</label><input type="text" id="f-name" value="${esc(user.fullName)}" required /></div>
+        <div class="field"><label>Telefon</label><input type="tel" id="f-phone" value="${esc(user.phone || '')}" placeholder="+998" /></div>
+        ${
+          user.role === 'director'
+            ? `<div class="field"><label>Tashkilot</label>
+                <select id="f-org">${freeOrgs.map((o) => `<option value="${o.id}" ${o.id === user.orgId ? 'selected' : ''}>${esc(o.name)} (${o.type === 'school' ? 'Maktab' : "Bog'cha"})</option>`).join('')}</select>
+              </div>`
+            : ''
+        }
+        <button class="btn block" type="submit">Saqlash</button>
+      </form>
+    `);
+
+    document.getElementById('edit-user-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        fullName: document.getElementById('f-name').value,
+        phone: document.getElementById('f-phone').value,
+      };
+      if (user.role === 'director') payload.orgId = Number(document.getElementById('f-org').value);
+      try {
+        await App.api(`/api/users/${userId}`, { method: 'PATCH', body: payload });
+        closeModal();
+        App.toast('Saqlandi ✅');
+        renderUsersTab();
+      } catch (err) {
+        App.toast(err.message);
+      }
     });
   }
 
