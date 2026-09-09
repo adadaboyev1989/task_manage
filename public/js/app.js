@@ -47,15 +47,28 @@
   }
 
   // ---------- task list rendering ----------
+  function isAggregateRow(t) {
+    return t.targetCount !== undefined;
+  }
+
+  function aggregateBadgeHtml(t) {
+    if (t.overdue) return `<span class="badge overdue">Muddati o'tgan</span>`;
+    if (t.doneCount === t.targetCount) return `<span class="badge closed">Barchasi bajarildi</span>`;
+    if (t.doneCount === 0) return `<span class="badge pending">Yuborildi</span>`;
+    return `<span class="badge sent">${t.doneCount}/${t.targetCount} bajarildi</span>`;
+  }
+
   function taskRowHtml(t, opts) {
+    const aggregate = isAggregateRow(t);
     return `<li class="task-row" data-id="${t.id}">
       <div class="row-top">
         <div>
           <p class="title">${esc(t.title)}</p>
           <div class="meta">
             <span class="badge ${t.type}">${TYPE_LABEL[t.type]}</span>
-            ${statusBadgeHtml(t.status, t.overdue)}
-            ${opts.showOrg ? `<span>${esc(t.orgName)}</span>` : ''}
+            ${aggregate ? aggregateBadgeHtml(t) : statusBadgeHtml(t.status, t.overdue)}
+            ${aggregate ? `<span>${t.targetCount} ta tashkilotga</span>` : ''}
+            ${opts.showOrg && t.orgName ? `<span>${esc(t.orgName)}</span>` : ''}
           </div>
         </div>
       </div>
@@ -80,9 +93,9 @@
   }
 
   function filterTasks(tasks, tab) {
-    if (tab === 'active') return tasks.filter((t) => t.status === 'pending' || t.status === 'sent');
+    if (tab === 'active') return tasks.filter((t) => (isAggregateRow(t) ? t.doneCount < t.targetCount : t.status === 'pending' || t.status === 'sent'));
     if (tab === 'overdue') return tasks.filter((t) => t.overdue);
-    if (tab === 'done') return tasks.filter((t) => t.status === 'closed' || t.status === 'done');
+    if (tab === 'done') return tasks.filter((t) => (isAggregateRow(t) ? t.doneCount === t.targetCount : t.status === 'closed' || t.status === 'done'));
     return tasks;
   }
 
@@ -130,6 +143,7 @@
             : ''
         }`;
     } else {
+      const canClose = ME.role === 'admin' || (ME.role === 'department' && task.created_by === ME.id);
       targetsHtml = `<div class="section-title">Tashkilotlar (${task.targets.length})</div>
         <div class="table-wrap"><table class="org-table"><thead><tr><th>Tashkilot</th><th>Holat</th>${task.type === 'control' ? '<th></th>' : ''}</tr></thead>
         <tbody>${task.targets
@@ -139,12 +153,17 @@
               <td>${statusBadgeHtml(t.status, isTargetOverdue(t, task))}</td>
               ${
                 task.type === 'control'
-                  ? `<td>${t.status === 'pending' ? `<button class="btn small danger btn-close-target" data-org="${t.org_id}">Nazoratdan yechish</button>` : ''}</td>`
+                  ? `<td>${t.status === 'pending' && canClose ? `<button class="btn small danger btn-close-target" data-org="${t.org_id}">Nazoratdan yechish</button>` : ''}</td>`
                   : ''
               }
             </tr>`
           )
-          .join('')}</tbody></table></div>`;
+          .join('')}</tbody></table></div>
+        ${
+          task.type === 'control' && !canClose && task.targets.some((t) => t.status === 'pending')
+            ? '<p class="hint muted">Faqat shu topshiriqni bergan xodim yoki administrator nazoratdan yecha oladi.</p>'
+            : ''
+        }`;
     }
 
     openModal(`

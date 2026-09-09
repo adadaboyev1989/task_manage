@@ -70,20 +70,56 @@ def list_tasks(
                WHERE tt.org_id = ? ORDER BY t.created_at DESC""",
             (current_user["org_id"],),
         ).fetchall()
+    elif orgId:
+        rows = db.execute(
+            """SELECT t.*, tt.status AS target_status, tt.completed_at, tt.org_id, o.name AS org_name, o.type AS org_type, u.full_name AS creator_name
+               FROM task_targets tt JOIN tasks t ON t.id = tt.task_id JOIN orgs o ON o.id = tt.org_id JOIN users u ON u.id = t.created_by
+               WHERE tt.org_id = ? ORDER BY t.created_at DESC""",
+            (orgId,),
+        ).fetchall()
     else:
-        if orgId:
-            rows = db.execute(
-                """SELECT t.*, tt.status AS target_status, tt.completed_at, tt.org_id, o.name AS org_name, o.type AS org_type, u.full_name AS creator_name
-                   FROM task_targets tt JOIN tasks t ON t.id = tt.task_id JOIN orgs o ON o.id = tt.org_id JOIN users u ON u.id = t.created_by
-                   WHERE tt.org_id = ? ORDER BY t.created_at DESC""",
-                (orgId,),
-            ).fetchall()
-        else:
-            rows = db.execute(
-                """SELECT t.*, tt.status AS target_status, tt.completed_at, tt.org_id, o.name AS org_name, o.type AS org_type, u.full_name AS creator_name
-                   FROM task_targets tt JOIN tasks t ON t.id = tt.task_id JOIN orgs o ON o.id = tt.org_id JOIN users u ON u.id = t.created_by
-                   ORDER BY t.created_at DESC"""
-            ).fetchall()
+        # Department/admin overview with no org filter: one row per TASK, not per
+        # (task, org) pair — otherwise a task broadcast to every school/kindergarten
+        # would flood the list with one row per recipient instead of one per task.
+        agg_rows = db.execute(
+            """SELECT t.*, u.full_name AS creator_name,
+                      COUNT(tt.id) AS target_count,
+                      SUM(CASE WHEN tt.status IN ('closed','done') THEN 1 ELSE 0 END) AS done_count,
+                      SUM(CASE WHEN t.type = 'control' AND tt.status = 'pending' AND t.deadline_at < datetime('now','localtime') THEN 1 ELSE 0 END) AS overdue_count
+               FROM tasks t
+               JOIN task_targets tt ON tt.task_id = t.id
+               JOIN users u ON u.id = t.created_by
+               GROUP BY t.id
+               ORDER BY t.created_at DESC"""
+        ).fetchall()
+
+        result = []
+        for r in agg_rows:
+            r = dict(r)
+            result.append(
+                {
+                    "id": r["id"],
+                    "title": r["title"],
+                    "type": r["type"],
+                    "deadlineAt": r["deadline_at"],
+                    "createdAt": r["created_at"],
+                    "createdByName": r["creator_name"],
+                    "targetCount": r["target_count"],
+                    "doneCount": r["done_count"],
+                    "overdue": r["overdue_count"] > 0,
+                }
+            )
+
+        if type:
+            result = [r for r in result if r["type"] == type]
+        if status == "overdue":
+            result = [r for r in result if r["overdue"]]
+        elif status == "done":
+            result = [r for r in result if r["doneCount"] == r["targetCount"]]
+        elif status == "active":
+            result = [r for r in result if r["doneCount"] < r["targetCount"]]
+
+        return result
 
     result = []
     for r in rows:
@@ -218,6 +254,8 @@ def close_target(task_id: int, org_id: int, current_user: dict = Depends(require
         raise HTTPException(status_code=404, detail="Topshiriq topilmadi")
     if task["type"] != "control":
         raise HTTPException(status_code=400, detail="Bu topshiriqni yechish shart emas")
+    if current_user["role"] != "admin" and task["created_by"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Faqat shu topshiriqni bergan xodim yoki administrator nazoratdan yechishi mumkin")
 
     target = db.execute("SELECT * FROM task_targets WHERE task_id = ? AND org_id = ?", (task_id, org_id)).fetchone()
     if not target:
