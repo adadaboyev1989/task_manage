@@ -166,6 +166,7 @@
           <input type="file" id="file-input" style="display:none" />
         </label>
         <a class="btn secondary small" id="btn-telegram-attach" href="#">✈️ Telegramdan biriktirish</a>
+        <button class="btn secondary small" id="btn-share">📤 Ulashish</button>
       </div>
       <p class="hint muted" style="margin-top:6px">Yaratdi: ${esc(task.creator?.full_name || '—')} · ${formatDT(task.created_at)}</p>
     `);
@@ -237,6 +238,51 @@
       }
       App.toast('Telegramda xabarni forward qiling');
     };
+
+    document.getElementById('btn-share').onclick = () => shareTaskToTelegram(task);
+  }
+
+  async function shareTaskToTelegram(task) {
+    const lines = [task.title];
+    if (task.description) lines.push(task.description);
+    if (task.deadline_at) lines.push(`⏰ Muddat: ${formatDT(task.deadline_at)}`);
+    const text = lines.join('\n\n');
+    const shareUrl = `${location.origin}/#/task/${task.id}`;
+
+    let files = [];
+    if (task.attachments.length && navigator.canShare) {
+      try {
+        files = await Promise.all(
+          task.attachments.map(async (a) => {
+            const res = await fetch(`/api/tasks/attachments/${a.id}/download`, { credentials: 'include' });
+            const blob = await res.blob();
+            const name = a.original_name || `matn-${a.id}.txt`;
+            return new File([blob], name, { type: blob.type || 'application/octet-stream' });
+          })
+        );
+        if (!navigator.canShare({ files })) files = [];
+      } catch (err) {
+        console.error('fayllarni ulashishga tayyorlashda xato', err);
+        files = [];
+      }
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share(files.length ? { title: task.title, text, files } : { title: task.title, text, url: shareUrl });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error('ulashish muvaffaqiyatsiz', err);
+      }
+    }
+
+    // Fallback for browsers without the Web Share API (mainly desktop): open Telegram's
+    // own share dialog so the user can still pick a chat to forward the text+link to.
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`, '_blank');
+    if (task.attachments.length) {
+      App.toast("Fayllarni alohida yuklab olib, Telegram orqali qo'lda yuboring");
+    }
   }
 
   // ---------- director view ----------
