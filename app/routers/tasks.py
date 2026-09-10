@@ -59,6 +59,14 @@ def _task_with_targets(db, task_id: int) -> Optional[dict]:
     return task
 
 
+def _can_manage_closing(task: dict, current_user: dict) -> bool:
+    return (
+        current_user["role"] == "admin"
+        or task["created_by"] == current_user["id"]
+        or task["additional_closer_id"] == current_user["id"]
+    )
+
+
 def _is_overdue(status_: str, task_type: str, deadline_at: Optional[str]) -> bool:
     if task_type != "control" or status_ != "pending" or not deadline_at:
         return False
@@ -267,11 +275,7 @@ def close_target(task_id: int, org_id: int, current_user: dict = Depends(require
         raise HTTPException(status_code=404, detail="Topshiriq topilmadi")
     if task["type"] != "control":
         raise HTTPException(status_code=400, detail="Bu topshiriqni yechish shart emas")
-    if (
-        current_user["role"] != "admin"
-        and task["created_by"] != current_user["id"]
-        and task["additional_closer_id"] != current_user["id"]
-    ):
+    if not _can_manage_closing(task, current_user):
         raise HTTPException(status_code=403, detail="Faqat shu topshiriqni bergan xodim yoki administrator nazoratdan yechishi mumkin")
 
     target = db.execute("SELECT * FROM task_targets WHERE task_id = ? AND org_id = ?", (task_id, org_id)).fetchone()
@@ -284,6 +288,58 @@ def close_target(task_id: int, org_id: int, current_user: dict = Depends(require
     )
     db.commit()
     return _task_with_targets(db, task_id)
+
+
+@router.patch("/api/tasks/{task_id}/targets/{org_id}/reopen")
+def reopen_target(task_id: int, org_id: int, current_user: dict = Depends(require_roles("department", "admin"))):
+    db = get_db()
+    task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if not task:
+        raise HTTPException(status_code=404, detail="Topshiriq topilmadi")
+    if task["type"] != "control":
+        raise HTTPException(status_code=400, detail="Bu topshiriqni qayta nazoratga o'tkazish shart emas")
+    if not _can_manage_closing(task, current_user):
+        raise HTTPException(
+            status_code=403, detail="Faqat shu topshiriqni bergan xodim yoki administrator qayta nazoratga o'tkazishi mumkin"
+        )
+
+    target = db.execute("SELECT * FROM task_targets WHERE task_id = ? AND org_id = ?", (task_id, org_id)).fetchone()
+    if not target:
+        raise HTTPException(status_code=404, detail="Topilmadi")
+    if target["status"] != "closed":
+        raise HTTPException(status_code=400, detail="Bu topshiriq nazoratdan yechilmagan")
+
+    db.execute(
+        "UPDATE task_targets SET status = 'pending', completed_at = NULL, completed_by = NULL WHERE id = ?",
+        (target["id"],),
+    )
+    db.commit()
+    return _task_with_targets(db, task_id)
+
+
+@router.delete("/api/tasks/{task_id}")
+def delete_task(task_id: int, current_user: dict = Depends(require_roles("department", "admin"))):
+    db = get_db()
+    task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if not task:
+        raise HTTPException(status_code=404, detail="Topshiriq topilmadi")
+    if current_user["role"] != "admin" and task["created_by"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Faqat shu topshiriqni bergan xodim yoki administrator o'chira oladi")
+
+    stored_names = [
+        row["stored_name"]
+        for row in db.execute(
+            "SELECT stored_name FROM attachments WHERE task_id = ? AND stored_name IS NOT NULL", (task_id,)
+        ).fetchall()
+    ]
+
+    db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    db.commit()
+
+    for stored_name in stored_names:
+        (UPLOAD_DIR / stored_name).unlink(missing_ok=True)
+
+    return {"ok": True}
 
 
 @router.patch("/api/tasks/{task_id}/assign-closer")

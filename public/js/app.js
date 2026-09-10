@@ -147,6 +147,7 @@
         ME.role === 'admin' ||
         (ME.role === 'department' &&
           (task.created_by === ME.id || (task.additionalCloser && task.additionalCloser.id === ME.id)));
+      const canDelete = ME.role === 'admin' || (ME.role === 'department' && task.created_by === ME.id);
       targetsHtml = `<div class="section-title">Tashkilotlar (${task.targets.length})</div>
         <div class="table-wrap"><table class="org-table"><thead><tr><th>Tashkilot</th><th>Holat</th>${task.type === 'control' ? '<th></th>' : ''}</tr></thead>
         <tbody>${task.targets
@@ -156,7 +157,13 @@
               <td>${statusBadgeHtml(t.status, isTargetOverdue(t, task))}</td>
               ${
                 task.type === 'control'
-                  ? `<td>${t.status === 'pending' && canClose ? `<button class="btn small danger btn-close-target" data-org="${t.org_id}">Nazoratdan yechish</button>` : ''}</td>`
+                  ? `<td>${
+                      t.status === 'pending' && canClose
+                        ? `<button class="btn small danger btn-close-target" data-org="${t.org_id}">Nazoratdan yechish</button>`
+                        : t.status === 'closed' && canClose
+                        ? `<button class="btn small secondary btn-reopen-target" data-org="${t.org_id}">Qayta nazoratga o'tkazish</button>`
+                        : ''
+                    }</td>`
                   : ''
               }
             </tr>`
@@ -172,7 +179,12 @@
             ? `<p class="hint muted">Qo'shimcha ruxsat: ${esc(task.additionalCloser.fullName)}</p>`
             : ''
         }
-        ${task.type === 'control' && ME.role === 'admin' ? '<div id="assign-closer-block"></div>' : ''}`;
+        ${task.type === 'control' && ME.role === 'admin' ? '<div id="assign-closer-block"></div>' : ''}
+        ${
+          canDelete
+            ? `<div style="margin-top:14px"><button class="btn small danger" id="btn-delete-task">🗑️ Topshiriqni butunlay o'chirish</button></div>`
+            : ''
+        }`;
     }
 
     openModal(`
@@ -224,6 +236,34 @@
         }
       };
     });
+
+    modalRoot.querySelectorAll('.btn-reopen-target').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await App.api(`/api/tasks/${task.id}/targets/${btn.dataset.org}/reopen`, { method: 'PATCH' });
+          App.toast("Qayta nazoratga o'tkazildi ✅");
+          openTaskModal(task.id);
+          refreshCurrentView();
+        } catch (err) {
+          App.toast(err.message);
+        }
+      };
+    });
+
+    const deleteTaskBtn = document.getElementById('btn-delete-task');
+    if (deleteTaskBtn) {
+      deleteTaskBtn.onclick = async () => {
+        if (!confirm("Topshiriqni butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi, barcha fayllar ham o'chib ketadi.")) return;
+        try {
+          await App.api(`/api/tasks/${task.id}`, { method: 'DELETE' });
+          App.toast("Topshiriq o'chirildi ✅");
+          closeModal();
+          refreshCurrentView();
+        } catch (err) {
+          App.toast(err.message);
+        }
+      };
+    }
 
     document.getElementById('file-input').onchange = async (e) => {
       const files = [...e.target.files];
