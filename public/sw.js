@@ -1,4 +1,4 @@
-const CACHE_NAME = 'topshiriqlar-shell-v1';
+const CACHE_NAME = 'topshiriqlar-shell-v2';
 const SHELL_ASSETS = [
   '/manifest.json',
   '/icons/icon-192.png',
@@ -26,17 +26,23 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.pathname.startsWith('/api/')) return;
 
+  // Network-first: always prefer the live server response so a new deploy is visible
+  // immediately, and only fall back to the cached copy when the network is unavailable
+  // (offline support). A cache-first strategy here would keep serving old HTML/CSS/JS
+  // forever, since nothing else ever invalidates it. `cache: 'no-store'` bypasses the
+  // browser's own HTTP heuristic cache too — our static files have no Cache-Control
+  // header, so without this a "fresh enough" heuristic match could still short-circuit
+  // the network request below and hand back a stale response.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((res) => {
+    fetch(event.request, { cache: 'no-store' })
+      .then((res) => {
         if (res.ok && url.origin === self.location.origin) {
           const copy = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         }
         return res;
-      }).catch(() => cached);
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
 
