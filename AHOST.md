@@ -3,7 +3,7 @@
 Bu qo'llanma loyihani **ahost.uz**'dagi umumiy (shared) hostingga, cPanel'ning **Setup Python App** vositasi (Passenger) orqali qadam-baqadam joylash uchun.
 
 - **Hosting turi:** Shared hosting + cPanel
-- **Ishga tushirish usuli:** Apache + Passenger (ASGI)
+- **Ishga tushirish usuli:** Apache + Passenger (WSGI, `a2wsgi` orqali ASGI'dan o'ralgan)
 - **Talab qilinadigan Python versiyasi:** 3.11 yoki undan yuqori
 - **Taxminiy vaqt:** 30–45 daqiqa
 
@@ -68,10 +68,20 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from app.main import app as application
+from app.main import app as asgi_app
+from app import telegram_bot
+from a2wsgi import ASGIMiddleware
+
+telegram_bot.start()  # oddiy thread, event loop kerak emas — shu yerda xavfsiz ishga tushadi
+
+application = ASGIMiddleware(asgi_app)
 ```
 
-FastAPI — ASGI ilova. Passenger (versiya 6+, ahost.uz'dagi barcha zamonaviy cPanel serverlarida mavjud) buni avtomatik aniqlab, to'g'ri ishga tushiradi — alohida sozlash shart emas.
+FastAPI — ASGI ilova, lekin ahost.uz'dagi cPanel serverlarining ko'pchiligida ishlaydigan Passenger versiyasi ASGI'ni to'g'ridan-to'g'ri qo'llab-quvvatlamaydi (faqat WSGI). Shuning uchun `a2wsgi` kutubxonasi (`requirements.txt`'da bor) ASGI ilovani WSGI'ga o'raydi.
+
+Bitta muhim nuance: FastAPI'ning odatiy `lifespan` mexanizmi (startup/shutdown hodisalari) WSGI orqali ishlaganda chaqirilmaydi — shuning uchun Telegram bot oqimi (`telegram_bot.start()`) shu faylning o'zida, modul yuklanganda to'g'ridan-to'g'ri ishga tushiriladi.
+
+> ⚠️ **Diqqat:** agar Passenger yuklama ostida bir nechta worker-jarayon (process) ochsa, har bir jarayon `passenger_wsgi.py`'ni alohida yuklaydi va natijada bir nechta Telegram bot pollerlari bir xil tokenda parallel ishga tushishi mumkin — bu Telegram tomonidan **409 Conflict** xatosiga olib keladi. Kichik/o'rtacha yuklamali ichki tizim uchun odatda Passenger bitta jarayonda qoladi, lekin imkon bo'lsa **Setup Python App**'da (yoki cPanel'ning Passenger sozlamalarida) worker/instance sonini **1**ga cheklab qo'ying.
 
 ### 4. Kutubxonalarni o'rnating
 
@@ -152,6 +162,8 @@ curl -s -o /dev/null https://sizning-domeningiz.uz/manifest.json
 | **502 / Bad Gateway** | Ilova ishga tushmayapti — `passenger_wsgi.py` ildiz papkada ekanini va `application` nomi to'g'ri yozilganini tekshiring, so'ng qayta **Restart** qiling. |
 | **Telegram orqali kirish ishlamayapti** | `BOT_TOKEN`/`BOT_USERNAME` to'g'riligini va 9-qadamdagi cron vazifasi ishlab turganini tekshiring — jarayon uxlab qolgan bo'lishi mumkin. |
 | **Fayl yuklab bo'lmayapti** | `uploads/` va `data/` papkalari ilova foydalanuvchisiga tegishli va yozish huquqiga ega ekanini File Manager'da tekshiring. |
+| **Yangi fayl yukladim, lekin saytda hech narsa o'zgarmadi** | 1) Ilovani **Restart** qilishni unutmagansizmi (7-qadam)? Kod o'zgarganda bu shart. 2) Sayt PWA bo'lgani uchun brauzerda "service worker" ishlaydi — telefon/kompyuterda saytni to'liq yopib, keshni tozalab (yoki "Hard refresh": Ctrl+Shift+R) qayta oching. `git pull` orqali eng so'nggi kodni olganingizga ishonch hosil qiling (`git log -1` bilan tekshiring). |
+| **Telegram bot vaqti-vaqti bilan ishlamay qoladi / 409 xatosi** | Passenger bir nechta jarayon ochgan bo'lishi mumkin (yuqoridagi 3-qadamdagi eslatmaga qarang) — worker/instance sonini 1ga cheklang. |
 
 ## Keyinchalik yangilash
 
