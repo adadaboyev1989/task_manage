@@ -110,6 +110,12 @@ def _connect():
         conn.execute("ALTER TABLE tasks ADD COLUMN additional_closer_id INTEGER REFERENCES users(id)")
         conn.commit()
 
+    target_cols = {row["name"] for row in conn.execute("PRAGMA table_info(task_targets)").fetchall()}
+    if "outcome" not in target_cols:
+        conn.execute("ALTER TABLE task_targets ADD COLUMN outcome TEXT")
+        conn.execute("UPDATE task_targets SET outcome = 'on_time' WHERE status = 'closed' AND outcome IS NULL")
+        conn.commit()
+
     return conn
 
 

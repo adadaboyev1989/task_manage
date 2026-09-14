@@ -7,6 +7,7 @@
   const STATUS_LABEL = { pending: 'Kutilmoqda', closed: 'Yopildi', sent: 'Yuborildi', done: 'Bajarildi' };
   const TYPE_LABEL = { control: 'Nazoratda', info: "Ma'lumot" };
   const ROLE_LABEL = { admin: 'Administrator', department: "Bo'lim xodimi", director: 'Direktor' };
+  const OUTCOME_LABEL = { on_time: "O'z vaqtida · 2 ball", late: 'Muddatidan kech · 1 ball', penalty: 'Jarima · 0 ball' };
 
   function esc(str) {
     const div = document.createElement('div');
@@ -154,12 +155,20 @@
           .map(
             (t) => `<tr>
               <td>${esc(t.org_name)}</td>
-              <td>${statusBadgeHtml(t.status, isTargetOverdue(t, task))}</td>
+              <td>${statusBadgeHtml(t.status, isTargetOverdue(t, task))}${
+                t.status === 'closed' && t.outcome
+                  ? `<div class="hint muted outcome-hint">${OUTCOME_LABEL[t.outcome] || ''}</div>`
+                  : ''
+              }</td>
               ${
                 task.type === 'control'
                   ? `<td>${
                       t.status === 'pending' && canClose
-                        ? `<button class="btn small danger btn-close-target" data-org="${t.org_id}">Nazoratdan yechish</button>`
+                        ? `<div class="close-outcome-group">
+                            <button class="btn small success btn-close-target" data-org="${t.org_id}" data-outcome="on_time" title="Nazoratdan yechish — o'z vaqtida bajarildi">✅ O'z vaqtida</button>
+                            <button class="btn small warning btn-close-target" data-org="${t.org_id}" data-outcome="late" title="Nazoratdan yechish — muddatidan kech bajarildi">🕒 Kech bajardi</button>
+                            <button class="btn small danger btn-close-target" data-org="${t.org_id}" data-outcome="penalty" title="Nazoratdan yechish — jarima, bajarmadi">❌ Jarima</button>
+                          </div>`
                         : t.status === 'closed' && canClose
                         ? `<button class="btn small secondary btn-reopen-target" data-org="${t.org_id}">Qayta nazoratga o'tkazish</button>`
                         : ''
@@ -227,8 +236,11 @@
     modalRoot.querySelectorAll('.btn-close-target').forEach((btn) => {
       btn.onclick = async () => {
         try {
-          await App.api(`/api/tasks/${task.id}/targets/${btn.dataset.org}/close`, { method: 'PATCH' });
-          App.toast('Nazoratdan yechildi ✅');
+          await App.api(`/api/tasks/${task.id}/targets/${btn.dataset.org}/close`, {
+            method: 'PATCH',
+            body: { outcome: btn.dataset.outcome },
+          });
+          App.toast(`Nazoratdan yechildi ✅ (${OUTCOME_LABEL[btn.dataset.outcome] || ''})`);
           openTaskModal(task.id);
           refreshCurrentView();
         } catch (err) {
@@ -398,7 +410,11 @@
 
   // ---------- director view ----------
   async function renderDirector() {
-    const [stats, tasks] = await Promise.all([App.api('/api/stats/me'), App.api('/api/tasks')]);
+    const [stats, tasks, overview] = await Promise.all([
+      App.api('/api/stats/me'),
+      App.api('/api/tasks'),
+      App.api('/api/stats/overview'),
+    ]);
     const app = document.getElementById('app');
     app.innerHTML = `
       <div class="stat-grid">
@@ -406,39 +422,74 @@
         <div class="stat-tile accent-warning"><div class="num">${stats.controlPending + stats.infoPending}</div><div class="label">Faol</div></div>
         <div class="stat-tile accent-danger"><div class="num">${stats.overdue}</div><div class="label">Muddati o'tgan</div></div>
         <div class="stat-tile accent-success"><div class="num">${stats.controlClosed + stats.infoDone}</div><div class="label">Bajarilgan</div></div>
+        <div class="stat-tile accent-points"><div class="num">🏆 ${stats.points}</div><div class="label">Ball</div></div>
       </div>
-      <div class="tabs" id="tabs">
-        <button class="tab-btn ${dirFilter.tab === 'all' ? 'active' : ''}" data-f="all">Barchasi</button>
-        <button class="tab-btn ${dirFilter.tab === 'active' ? 'active' : ''}" data-f="active">Faol</button>
-        <button class="tab-btn ${dirFilter.tab === 'overdue' ? 'active' : ''}" data-f="overdue">Muddati o'tgan</button>
-        <button class="tab-btn ${dirFilter.tab === 'done' ? 'active' : ''}" data-f="done">Bajarilgan</button>
+      <div class="tabs" id="dir-main-tabs">
+        <button class="tab-btn active" data-mt="tasks">Vazifalarim</button>
+        <button class="tab-btn" data-mt="rating">Tashkilotlar reytingi</button>
       </div>
-      <ul class="task-list" id="task-list"></ul>
+      <div id="dir-tab-content"></div>
     `;
 
-    function apply() {
-      renderTaskList(filterTasks(tasks, dirFilter.tab), document.getElementById('task-list'), { showOrg: false });
+    const content = document.getElementById('dir-tab-content');
+
+    function renderTasksTab() {
+      content.innerHTML = `
+        <div class="tabs" id="tabs">
+          <button class="tab-btn ${dirFilter.tab === 'all' ? 'active' : ''}" data-f="all">Barchasi</button>
+          <button class="tab-btn ${dirFilter.tab === 'active' ? 'active' : ''}" data-f="active">Faol</button>
+          <button class="tab-btn ${dirFilter.tab === 'overdue' ? 'active' : ''}" data-f="overdue">Muddati o'tgan</button>
+          <button class="tab-btn ${dirFilter.tab === 'done' ? 'active' : ''}" data-f="done">Bajarilgan</button>
+        </div>
+        <ul class="task-list" id="task-list"></ul>
+      `;
+      function apply() {
+        renderTaskList(filterTasks(tasks, dirFilter.tab), document.getElementById('task-list'), { showOrg: false });
+      }
+      content.querySelectorAll('#tabs .tab-btn').forEach((b) =>
+        b.addEventListener('click', () => {
+          content.querySelectorAll('#tabs .tab-btn').forEach((x) => x.classList.remove('active'));
+          b.classList.add('active');
+          dirFilter.tab = b.dataset.f;
+          apply();
+        })
+      );
+      apply();
     }
-    document.querySelectorAll('#tabs .tab-btn').forEach((b) =>
+
+    function renderRatingTab() {
+      content.innerHTML = `<p class="muted" style="margin-top:-4px">Barcha maktab va bog'chalar o'z vaqtida bajargan (2 ball), kech bajargan (1 ball) va bajarmagan (0 ball) topshiriqlar bo'yicha reyting.</p>${orgTableHtml(
+        overview.perOrg,
+        { clickable: false }
+      )}`;
+    }
+
+    document.querySelectorAll('#dir-main-tabs .tab-btn').forEach((b) =>
       b.addEventListener('click', () => {
-        document.querySelectorAll('#tabs .tab-btn').forEach((x) => x.classList.remove('active'));
+        document.querySelectorAll('#dir-main-tabs .tab-btn').forEach((x) => x.classList.remove('active'));
         b.classList.add('active');
-        dirFilter.tab = b.dataset.f;
-        apply();
+        if (b.dataset.mt === 'tasks') renderTasksTab();
+        else renderRatingTab();
       })
     );
-    apply();
+    renderTasksTab();
   }
 
-  // ---------- department/admin view ----------
-  function orgTableHtml(orgs) {
+  // ---------- org monitoring / rating ----------
+  const RANK_MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
+
+  function orgTableHtml(orgs, opts) {
+    opts = opts || {};
+    const ranked = [...orgs].sort((a, b) => (b.points || 0) - (a.points || 0));
     return `<div class="table-wrap"><table class="org-table">
-      <thead><tr><th>Nomi</th><th>Turi</th><th>Nazoratda</th><th>Muddati o'tgan</th><th>Ma'lumot</th><th>Direktor</th></tr></thead>
-      <tbody>${orgs
+      <thead><tr><th>#</th><th>Nomi</th><th>Turi</th><th>Ball</th><th>Nazoratda</th><th>Muddati o'tgan</th><th>Ma'lumot</th><th>Direktor</th></tr></thead>
+      <tbody>${ranked
         .map(
-          (o) => `<tr class="org-row" data-org="${o.id}" style="cursor:pointer">
+          (o, i) => `<tr class="org-row" data-org="${o.id}" ${opts.clickable === false ? '' : 'style="cursor:pointer"'}>
+        <td class="rank-cell">${RANK_MEDAL[i + 1] || i + 1}</td>
         <td>${esc(o.name)}</td>
         <td>${o.type === 'school' ? 'Maktab' : "Bog'cha"}</td>
+        <td><span class="points-chip">${o.points || 0}</span></td>
         <td>${o.controlPending}</td>
         <td>${o.overdue ? `<span class="badge overdue">${o.overdue}</span>` : 0}</td>
         <td>${o.infoPending}</td>
@@ -534,12 +585,8 @@
       </div>
       <form id="create-task-form">
         <div class="field">
-          <label>Sarlavha</label>
-          <input type="text" id="f-title" required maxlength="200" />
-        </div>
-        <div class="field">
-          <label>Tavsif</label>
-          <textarea id="f-description" maxlength="4000"></textarea>
+          <label>Matn</label>
+          <textarea id="f-description" required maxlength="4000" placeholder="Topshiriq matnini kiriting..."></textarea>
         </div>
         <div class="field">
           <label>Turi</label>
@@ -601,7 +648,6 @@
       if (!orgIds.length) return App.toast('Kamida bitta tashkilot tanlang');
 
       const payload = {
-        title: document.getElementById('f-title').value,
         description: document.getElementById('f-description').value,
         type: typeSelect.value,
         deadlineAt: document.getElementById('f-deadline').value || null,

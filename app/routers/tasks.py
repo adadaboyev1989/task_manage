@@ -16,7 +16,7 @@ router = APIRouter(tags=["tasks"])
 
 
 class CreateTaskBody(BaseModel):
-    title: str
+    title: Optional[str] = None
     description: str = ""
     type: str
     deadlineAt: Optional[str] = None
@@ -25,6 +25,20 @@ class CreateTaskBody(BaseModel):
 
 class AssignCloserBody(BaseModel):
     userId: Optional[int] = None
+
+
+class CloseBody(BaseModel):
+    outcome: str = "on_time"
+
+
+VALID_OUTCOMES = {"on_time", "late", "penalty"}
+
+
+def _derive_title(description: str) -> str:
+    first_line = description.strip().splitlines()[0].strip() if description.strip() else ""
+    if not first_line:
+        return "Topshiriq"
+    return first_line if len(first_line) <= 100 else first_line[:99].rstrip() + "…"
 
 
 def _task_with_targets(db, task_id: int) -> Optional[dict]:
@@ -190,12 +204,14 @@ def get_task(task_id: int, current_user: dict = Depends(get_current_user)):
 def create_task(body: CreateTaskBody, current_user: dict = Depends(require_roles("department", "admin"))):
     db = get_db()
 
-    if not body.title.strip():
-        raise HTTPException(status_code=400, detail="Sarlavha kiritilishi shart")
+    if not body.description.strip():
+        raise HTTPException(status_code=400, detail="Matn kiritilishi shart")
     if body.type not in ("control", "info"):
         raise HTTPException(status_code=400, detail="Topshiriq turi noto'g'ri")
     if not body.orgIds:
         raise HTTPException(status_code=400, detail="Kamida bitta tashkilot tanlanishi kerak")
+
+    title = body.title.strip() if body.title and body.title.strip() else _derive_title(body.description)
 
     normalized_deadline = normalize_datetime(body.deadlineAt) if body.type == "control" else None
     if body.type == "control" and not normalized_deadline:
@@ -210,7 +226,7 @@ def create_task(body: CreateTaskBody, current_user: dict = Depends(require_roles
 
     cur = db.execute(
         "INSERT INTO tasks (title, description, type, deadline_at, created_by) VALUES (?, ?, ?, ?, ?)",
-        (body.title.strip(), body.description.strip(), body.type, normalized_deadline, current_user["id"]),
+        (title, body.description.strip(), body.type, normalized_deadline, current_user["id"]),
     )
     task_id = cur.lastrowid
     for org in orgs:
@@ -268,7 +284,12 @@ def mark_done(task_id: int, org_id: int, current_user: dict = Depends(require_ro
 
 
 @router.patch("/api/tasks/{task_id}/targets/{org_id}/close")
-def close_target(task_id: int, org_id: int, current_user: dict = Depends(require_roles("department", "admin"))):
+def close_target(
+    task_id: int, org_id: int, body: CloseBody = CloseBody(), current_user: dict = Depends(require_roles("department", "admin"))
+):
+    if body.outcome not in VALID_OUTCOMES:
+        raise HTTPException(status_code=400, detail="Natija turi noto'g'ri")
+
     db = get_db()
     task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if not task:
@@ -283,8 +304,8 @@ def close_target(task_id: int, org_id: int, current_user: dict = Depends(require
         raise HTTPException(status_code=404, detail="Topilmadi")
 
     db.execute(
-        "UPDATE task_targets SET status = 'closed', completed_at = datetime('now'), completed_by = ? WHERE id = ?",
-        (current_user["id"], target["id"]),
+        "UPDATE task_targets SET status = 'closed', completed_at = datetime('now'), completed_by = ?, outcome = ? WHERE id = ?",
+        (current_user["id"], body.outcome, target["id"]),
     )
     db.commit()
     return _task_with_targets(db, task_id)
@@ -310,7 +331,7 @@ def reopen_target(task_id: int, org_id: int, current_user: dict = Depends(requir
         raise HTTPException(status_code=400, detail="Bu topshiriq nazoratdan yechilmagan")
 
     db.execute(
-        "UPDATE task_targets SET status = 'pending', completed_at = NULL, completed_by = NULL WHERE id = ?",
+        "UPDATE task_targets SET status = 'pending', completed_at = NULL, completed_by = NULL, outcome = NULL WHERE id = ?",
         (target["id"],),
     )
     db.commit()

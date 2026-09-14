@@ -13,6 +13,9 @@
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#2451B4" />
   <link rel="icon" href="/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
@@ -21,7 +24,7 @@
       <img src="/icons/icon-192.png" alt="logo" />
       <span>Admin panel</span>
     </div>
-    <div style="display:flex; align-items:center; gap:8px">
+    <div class="topbar-actions">
       <a class="btn secondary small" href="/">← Ilovaga qaytish</a>
       <button class="btn ghost small" id="btn-theme" title="Mavzuni almashtirish">🌙</button>
       <button class="btn ghost small" onclick="location.reload()" title="Sahifani yangilash">🔄</button>

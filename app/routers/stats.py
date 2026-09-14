@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.db import get_db
-from app.deps import require_roles
+from app.deps import get_current_user, require_roles
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -14,6 +14,13 @@ def _org_stat_counts(db, org_id: int) -> dict:
         ).fetchone()
         return row["c"]
 
+    points = db.execute(
+        """SELECT COALESCE(SUM(CASE tt.outcome WHEN 'on_time' THEN 2 WHEN 'late' THEN 1 WHEN 'penalty' THEN 0 ELSE 2 END), 0) p
+           FROM task_targets tt JOIN tasks t ON t.id = tt.task_id
+           WHERE tt.org_id = ? AND t.type = 'control' AND tt.status = 'closed'""",
+        (org_id,),
+    ).fetchone()["p"]
+
     return {
         "total": count(""),
         "controlPending": count("AND t.type = 'control' AND tt.status = 'pending'"),
@@ -21,6 +28,7 @@ def _org_stat_counts(db, org_id: int) -> dict:
         "overdue": count("AND t.type = 'control' AND tt.status = 'pending' AND t.deadline_at < datetime('now','localtime')"),
         "infoPending": count("AND t.type = 'info' AND tt.status = 'sent'"),
         "infoDone": count("AND t.type = 'info' AND tt.status = 'done'"),
+        "points": points,
     }
 
 
@@ -31,7 +39,7 @@ def my_stats(current_user: dict = Depends(require_roles("director"))):
 
 
 @router.get("/overview")
-def overview(current_user: dict = Depends(require_roles("department", "admin"))):
+def overview(current_user: dict = Depends(get_current_user)):
     db = get_db()
     orgs = [dict(o) for o in db.execute("SELECT * FROM orgs ORDER BY name").fetchall()]
 
