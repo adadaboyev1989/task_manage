@@ -524,17 +524,6 @@
     </table></div>`;
   }
 
-  function orgRatingSectionsHtml(orgs, opts) {
-    opts = opts || {};
-    const schools = orgs.filter((o) => o.type === 'school');
-    const kindergartens = orgs.filter((o) => o.type === 'kindergarten');
-    const section = (title, list) =>
-      list.length
-        ? `<div class="section-title">${title} (${list.length})</div>${orgTableHtml(list, { ...opts, hideType: true })}`
-        : '';
-    return section('🏫 Maktablar reytingi', schools) + section("🧸 Bog'chalar reytingi", kindergartens);
-  }
-
   async function renderDepartment() {
     const [overview, orgs] = await Promise.all([App.api('/api/stats/overview'), App.api('/api/orgs')]);
     ORGS = orgs;
@@ -548,25 +537,32 @@
       </div>
       <p class="muted" style="margin-top:-8px">🏫 ${overview.schoolCount} ta maktab · 🧸 ${overview.kindergartenCount} ta bog'cha</p>
       <div class="tabs">
-        <button class="tab-btn" data-tab="overview">Tashkilotlar</button>
+        <button class="tab-btn" data-tab="schools">Maktablar</button>
+        <button class="tab-btn" data-tab="kindergartens">Bog'chalar</button>
         <button class="tab-btn" data-tab="tasks">Topshiriqlar</button>
       </div>
       <div id="tab-content"></div>
     `;
 
     const tabButtons = app.querySelectorAll('.tabs .tab-btn');
-    let activeTab = 'overview';
+    let activeTab = 'schools';
 
     function setTab(tab) {
       activeTab = tab;
       tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-      if (tab === 'overview') renderOverviewTab();
+      if (tab === 'schools') renderOrgTypeTab('school');
+      else if (tab === 'kindergartens') renderOrgTypeTab('kindergarten');
       else renderTasksTab();
     }
     tabButtons.forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 
-    function renderOverviewTab() {
-      document.getElementById('tab-content').innerHTML = orgRatingSectionsHtml(overview.perOrg);
+    function renderOrgTypeTab(type) {
+      const list = overview.perOrg.filter((o) => o.type === type);
+      const heading = type === 'school' ? '🏫 Maktablar reytingi' : "🧸 Bog'chalar reytingi";
+      document.getElementById('tab-content').innerHTML = `<div class="section-title">${heading} (${list.length})</div>${orgTableHtml(
+        list,
+        { hideType: true }
+      )}`;
       document.querySelectorAll('.org-row').forEach((row) => {
         row.addEventListener('click', () => {
           deptFilter.orgId = Number(row.dataset.org);
@@ -606,7 +602,7 @@
       document.getElementById('btn-new-task').addEventListener('click', openCreateTaskModal);
     }
 
-    setTab('overview');
+    setTab('schools');
   }
 
   function openCreateTaskModal() {
