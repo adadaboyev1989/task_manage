@@ -478,20 +478,39 @@
   // ---------- org monitoring / rating ----------
   const RANK_MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
+  function penaltyTierClass(value, allValues) {
+    const max = Math.max(...allValues);
+    const min = Math.min(...allValues);
+    if (max === min) return 'penalty-good';
+    if (value === max) return 'penalty-bad';
+    if (value === min) return 'penalty-good';
+    return 'penalty-warn';
+  }
+
+  function phoneCallHtml(director) {
+    if (!director || !director.phone) return '';
+    const dial = director.phone.replace(/[^\d+]/g, '');
+    return `<a class="phone-call-btn" href="tel:${esc(dial)}" title="${esc(director.fullName)}ga qo'ng'iroq qilish" onclick="event.stopPropagation()">📞</a>`;
+  }
+
   function orgTableHtml(orgs, opts) {
     opts = opts || {};
     const ranked = [...orgs].sort((a, b) => (b.points || 0) - (a.points || 0));
+    const penaltyValues = ranked.map((o) => o.penaltyCount || 0);
     return `<div class="table-wrap"><table class="org-table">
-      <thead><tr><th>#</th><th>Nomi</th><th>Turi</th><th>Ball</th><th>Nazoratda</th><th>Muddati o'tgan</th><th>Ma'lumot</th><th>Direktor</th></tr></thead>
+      <thead><tr><th></th><th>#</th><th>Nomi</th><th>Turi</th><th>Ball</th><th>Nazoratda</th><th>Muddati o'tgan</th><th>Muddatidan kech</th><th>Jarima</th><th>Ma'lumot</th><th>Direktor</th></tr></thead>
       <tbody>${ranked
         .map(
           (o, i) => `<tr class="org-row" data-org="${o.id}" ${opts.clickable === false ? '' : 'style="cursor:pointer"'}>
+        <td>${phoneCallHtml(o.director)}</td>
         <td class="rank-cell">${RANK_MEDAL[i + 1] || i + 1}</td>
         <td>${esc(o.name)}</td>
         <td>${o.type === 'school' ? 'Maktab' : "Bog'cha"}</td>
         <td><span class="points-chip">${o.points || 0}</span></td>
         <td>${o.controlPending}</td>
         <td>${o.overdue ? `<span class="badge overdue">${o.overdue}</span>` : 0}</td>
+        <td>${o.lateCount || 0}</td>
+        <td><span class="penalty-chip ${penaltyTierClass(o.penaltyCount || 0, penaltyValues)}">${o.penaltyCount || 0}</span></td>
         <td>${o.infoPending}</td>
         <td>${o.director ? esc(o.director.fullName) + (o.director.telegramLinked ? ' ✅' : ' ⚠️') : '—'}</td>
       </tr>`

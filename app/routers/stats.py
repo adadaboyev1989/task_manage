@@ -28,6 +28,8 @@ def _org_stat_counts(db, org_id: int) -> dict:
         "overdue": count("AND t.type = 'control' AND tt.status = 'pending' AND t.deadline_at < datetime('now','localtime')"),
         "infoPending": count("AND t.type = 'info' AND tt.status = 'sent'"),
         "infoDone": count("AND t.type = 'info' AND tt.status = 'done'"),
+        "lateCount": count("AND t.type = 'control' AND tt.status = 'closed' AND tt.outcome = 'late'"),
+        "penaltyCount": count("AND t.type = 'control' AND tt.status = 'closed' AND tt.outcome = 'penalty'"),
         "points": points,
     }
 
@@ -48,10 +50,15 @@ def overview(current_user: dict = Depends(get_current_user)):
         director = None
         if o["director_user_id"]:
             d = db.execute(
-                "SELECT id, full_name, telegram_chat_id FROM users WHERE id = ?", (o["director_user_id"],)
+                "SELECT id, full_name, phone, telegram_chat_id FROM users WHERE id = ?", (o["director_user_id"],)
             ).fetchone()
             if d:
-                director = {"id": d["id"], "fullName": d["full_name"], "telegramLinked": bool(d["telegram_chat_id"])}
+                director = {
+                    "id": d["id"],
+                    "fullName": d["full_name"],
+                    "phone": d["phone"],
+                    "telegramLinked": bool(d["telegram_chat_id"]),
+                }
         per_org.append({"id": o["id"], "name": o["name"], "type": o["type"], "director": director, **_org_stat_counts(db, o["id"])})
 
     totals = {"total": 0, "controlPending": 0, "controlClosed": 0, "overdue": 0, "infoPending": 0, "infoDone": 0}

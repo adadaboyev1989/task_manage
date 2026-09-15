@@ -236,6 +236,33 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .rank-cell { font-weight: 700; text-align: center; }
 .stat-tile.accent-points .num { color: var(--points); }
 
+.phone-call-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--success-tint);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+.phone-call-btn:hover { background: var(--success); }
+
+.penalty-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+.penalty-chip.penalty-good { background: var(--success-tint); color: var(--success); }
+.penalty-chip.penalty-warn { background: var(--warning-tint); color: var(--warning); }
+.penalty-chip.penalty-bad { background: var(--danger-tint); color: var(--danger); }
+
 .empty-state { text-align: center; color: var(--muted); padding: 50px 20px; }
 
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
