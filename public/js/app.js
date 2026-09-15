@@ -458,10 +458,15 @@
     }
 
     function renderRatingTab() {
-      content.innerHTML = `<p class="muted" style="margin-top:-4px">Barcha maktab va bog'chalar o'z vaqtida bajargan (2 ball), kech bajargan (1 ball) va bajarmagan (0 ball) topshiriqlar bo'yicha reyting.</p>${orgTableHtml(
-        overview.perOrg,
-        { clickable: false }
-      )}`;
+      const myOrg = overview.perOrg.find((o) => o.id === ME.orgId);
+      const sameType = overview.perOrg.filter((o) => o.type === (myOrg ? myOrg.type : null));
+      const heading = myOrg && myOrg.type === 'kindergarten' ? "🧸 Bog'chalar reytingi" : '🏫 Maktablar reytingi';
+      content.innerHTML = `<p class="muted" style="margin-top:-4px">O'z vaqtida bajargan (2 ball), kech bajargan (1 ball) va bajarmagan (0 ball) topshiriqlar bo'yicha ${
+        myOrg && myOrg.type === 'kindergarten' ? "bog'chalar" : 'maktablar'
+      } reytingi.</p><div class="section-title">${heading} (${sameType.length})</div>${orgTableHtml(sameType, {
+        clickable: false,
+        hideType: true,
+      })}`;
     }
 
     document.querySelectorAll('#dir-main-tabs .tab-btn').forEach((b) =>
@@ -498,14 +503,14 @@
     const ranked = [...orgs].sort((a, b) => (b.points || 0) - (a.points || 0));
     const penaltyValues = ranked.map((o) => o.penaltyCount || 0);
     return `<div class="table-wrap"><table class="org-table">
-      <thead><tr><th></th><th>#</th><th>Nomi</th><th>Turi</th><th>Ball</th><th>Nazoratda</th><th>Muddati o'tgan</th><th>Muddatidan kech</th><th>Jarima</th><th>Ma'lumot</th><th>Direktor</th></tr></thead>
+      <thead><tr><th></th><th>#</th><th>Nomi</th>${opts.hideType ? '' : '<th>Turi</th>'}<th>Ball</th><th>Nazoratda</th><th>Muddati o'tgan</th><th>Muddatidan kech</th><th>Jarima</th><th>Ma'lumot</th><th>Direktor</th></tr></thead>
       <tbody>${ranked
         .map(
           (o, i) => `<tr class="org-row" data-org="${o.id}" ${opts.clickable === false ? '' : 'style="cursor:pointer"'}>
         <td>${phoneCallHtml(o.director)}</td>
         <td class="rank-cell">${RANK_MEDAL[i + 1] || i + 1}</td>
         <td>${esc(o.name)}</td>
-        <td>${o.type === 'school' ? 'Maktab' : "Bog'cha"}</td>
+        ${opts.hideType ? '' : `<td>${o.type === 'school' ? 'Maktab' : "Bog'cha"}</td>`}
         <td><span class="points-chip">${o.points || 0}</span></td>
         <td>${o.controlPending}</td>
         <td>${o.overdue ? `<span class="badge overdue">${o.overdue}</span>` : 0}</td>
@@ -517,6 +522,17 @@
         )
         .join('')}</tbody>
     </table></div>`;
+  }
+
+  function orgRatingSectionsHtml(orgs, opts) {
+    opts = opts || {};
+    const schools = orgs.filter((o) => o.type === 'school');
+    const kindergartens = orgs.filter((o) => o.type === 'kindergarten');
+    const section = (title, list) =>
+      list.length
+        ? `<div class="section-title">${title} (${list.length})</div>${orgTableHtml(list, { ...opts, hideType: true })}`
+        : '';
+    return section('🏫 Maktablar reytingi', schools) + section("🧸 Bog'chalar reytingi", kindergartens);
   }
 
   async function renderDepartment() {
@@ -550,7 +566,7 @@
     tabButtons.forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 
     function renderOverviewTab() {
-      document.getElementById('tab-content').innerHTML = orgTableHtml(overview.perOrg);
+      document.getElementById('tab-content').innerHTML = orgRatingSectionsHtml(overview.perOrg);
       document.querySelectorAll('.org-row').forEach((row) => {
         row.addEventListener('click', () => {
           deptFilter.orgId = Number(row.dataset.org);
