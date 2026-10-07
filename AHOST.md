@@ -17,18 +17,16 @@ Bu qo'llanma loyihani **ahost.uz**'dagi umumiy (shared) hostingga, cPanel'ning *
 
 ## Muhim eslatma: bu oddiy PHP saytdan farq qiladi
 
-Bu ilova Python/FastAPI'da yozilgan va doimiy ishlab turadigan Telegram bot oqimiga ega. Umumiy hostingda bu **cPanel → Setup Python App** (Passenger) orqali ishlaydi. Passenger vaqti-vaqti bilan foydalanilmayotgan jarayonlarni to'xtatadi — bu esa Telegram bot oqimini ham o'chirib qo'yadi. Buning oqibatlarini bartaraf etish uchun quyidagi **9-qadamni (cron ping)** albatta bajaring. Agar loyihangiz kattalashsa yoki uzilishlar tez-tez bezovta qilsa, kelajakda VPS/VDS tarifiga o'tish tavsiya etiladi.
+Bu ilova Python/FastAPI'da yozilgan. Telegram bot **webhook** rejimida ishlaydi — ya'ni alohida fon jarayoni/oqim kerak emas, Telegram yangi xabar kelganda to'g'ridan-to'g'ri saytingizga (`/api/telegram/webhook`) so'rov yuboradi, xuddi oddiy veb-so'rov kabi. Shu sababli Passenger jarayonni "uxlatib qo'yishi" boshqa funksiyalar uchun bo'lgani kabi faqat javob tezligiga ta'sir qiladi, bot butunlay ishdan chiqmaydi.
 
 Server ichida so'rov shunday oqadi:
 
 ```
-Brauzer / telefon  →  Apache + Passenger  →  FastAPI ilova  →  SQLite baza + fayllar
-                          (cPanel'ning       (so'rovlar +      (data/app.db,
-                           ASGI runner'i)     Telegram bot        uploads/)
-                                              oqimi)
+Telegram  →  Apache + Passenger  →  FastAPI ilova  →  SQLite baza + fayllar
+Brauzer                              (/api/... va       (data/app.db,
+                                      /api/telegram/      uploads/)
+                                      webhook)
 ```
-
-Cron ping (9-qadam) shu "Apache + Passenger" bosqichini doim tirik ushlab turadi.
 
 ## Joylash qadamlari
 
@@ -79,9 +77,9 @@ application = ASGIMiddleware(asgi_app)
 
 FastAPI — ASGI ilova, lekin ahost.uz'dagi cPanel serverlarining ko'pchiligida ishlaydigan Passenger versiyasi ASGI'ni to'g'ridan-to'g'ri qo'llab-quvvatlamaydi (faqat WSGI). Shuning uchun `a2wsgi` kutubxonasi (`requirements.txt`'da bor) ASGI ilovani WSGI'ga o'raydi.
 
-Bitta muhim nuance: FastAPI'ning odatiy `lifespan` mexanizmi (startup/shutdown hodisalari) WSGI orqali ishlaganda chaqirilmaydi — shuning uchun Telegram bot oqimi (`telegram_bot.start()`) shu faylning o'zida, modul yuklanganda to'g'ridan-to'g'ri ishga tushiriladi.
+Bitta muhim nuance: FastAPI'ning odatiy `lifespan` mexanizmi (startup/shutdown hodisalari) WSGI orqali ishlaganda chaqirilmaydi — shuning uchun Telegram webhookni ro'yxatdan o'tkazish (`telegram_bot.start()`) shu faylning o'zida, modul yuklanganda to'g'ridan-to'g'ri chaqiriladi. Bu chaqiruv tezkor (fon oqimida, bloklamaydi) va Telegram'ning `setWebhook` so'rovini yuboradi.
 
-> ⚠️ **Diqqat:** agar Passenger yuklama ostida bir nechta worker-jarayon (process) ochsa, har bir jarayon `passenger_wsgi.py`'ni alohida yuklaydi va natijada bir nechta Telegram bot pollerlari bir xil tokenda parallel ishga tushishi mumkin — bu Telegram tomonidan **409 Conflict** xatosiga olib keladi. Kichik/o'rtacha yuklamali ichki tizim uchun odatda Passenger bitta jarayonda qoladi, lekin imkon bo'lsa **Setup Python App**'da (yoki cPanel'ning Passenger sozlamalarida) worker/instance sonini **1**ga cheklab qo'ying.
+`telegram_bot.start()` endi faqat bir martalik ro'yxatdan o'tkazish bo'lgani uchun, agar Passenger yuklama ostida bir nechta worker-jarayon (process) ochsa va har biri shu faylni alohida yuklasa — muammo bo'lmaydi: `setWebhook`ni bir necha marta qayta chaqirish xavfsiz (idempotent), avvalgi "long polling" rejimidagi **409 Conflict** xatosi endi mumkin emas.
 
 ### 4. Kutubxonalarni o'rnating
 
@@ -136,15 +134,22 @@ Muhit o'zgaruvchilarini yoki kodni har o'zgartirganingizdan so'ng, **Setup Pytho
 
 cPanel → **SSL/TLS Status**'da domeningiz uchun **AutoSSL**'ni ishga tushiring (odatda ahost.uz'da Let's Encrypt bepul ulanadi). Sertifikat faollashgach, `APP_URL` o'zgaruvchisi `https://` bilan boshlanishiga ishonch hosil qiling — Telegram deep-link va push-bildirishnomalar shunga tayanadi.
 
-### 9. Telegram botni "tirik" ushlab turing
+### 9. Telegram webhook ro'yxatdan o'tganini tekshiring
 
-cPanel → **Cron Jobs**'ga o'ting va har 5 daqiqada saytga so'rov yuboradigan vazifa qo'shing — bu Passenger jarayonini uxlab qolishdan saqlaydi, ya'ni Telegram bot doim tinglab turadi:
+7-qadamda **Restart** qilinganda ilova avtomatik ravishda Telegram'ga "menga shu URL orqali xabar yuborib tur" deb bildiradi (webhook ro'yxatdan o'tadi) — qo'lda qiladigan boshqa ish yo'q. Tekshirish uchun (`<BOT_TOKEN>` o'rniga haqiqiy tokeningizni qo'ying):
 
+```bash
+curl -s "https://api.telegram.org/bot<BOT_TOKEN>/getWebhookInfo"
 ```
-Cron Jobs → Common Settings: Every 5 minutes
 
-curl -s -o /dev/null https://sizning-domeningiz.uz/manifest.json
-```
+Javobda `"url"` maydoni `https://sizning-domeningiz.uz/api/telegram/webhook` ga teng va `"last_error_message"` bo'sh bo'lishi kerak.
+
+> 💡 Ixtiyoriy: Passenger yuklama bo'lmaganda jarayonni "uxlatib qo'yishi" mumkin, bu birinchi so'rovga sal sekinroq javob berishiga olib kelishi mumkin (lekin Telegram botga ta'sir qilmaydi — webhook so'rovi kelganda jarayon avtomatik uyg'onadi). Buni oldini olish uchun **Cron Jobs**'da har 5 daqiqada ping yuborishni xohlasangiz:
+>
+> ```
+> Cron Jobs → Common Settings: Every 5 minutes
+> curl -s -o /dev/null https://sizning-domeningiz.uz/manifest.json
+> ```
 
 ## Tekshirib ko'ring
 
@@ -160,10 +165,10 @@ curl -s -o /dev/null https://sizning-domeningiz.uz/manifest.json
 | **500 — Internal Server Error** | cPanel → **Errors** bo'limi yoki ilova papkasidagi `stderr.log`'ni oching. Ko'pincha noto'g'ri `passenger_wsgi.py` yoki muhit o'zgaruvchisi yetishmasligi sabab bo'ladi. |
 | **ModuleNotFoundError** | Kutubxonalar noto'g'ri virtualenv'ga o'rnatilgan. 4-qadamdagi `activate` buyrug'ini aynan Setup Python App sahifasidan nusxalab ishlating. |
 | **502 / Bad Gateway** | Ilova ishga tushmayapti — `passenger_wsgi.py` ildiz papkada ekanini va `application` nomi to'g'ri yozilganini tekshiring, so'ng qayta **Restart** qiling. |
-| **Telegram orqali kirish ishlamayapti** | `BOT_TOKEN`/`BOT_USERNAME` to'g'riligini va 9-qadamdagi cron vazifasi ishlab turganini tekshiring — jarayon uxlab qolgan bo'lishi mumkin. |
+| **Telegram orqali kirish ishlamayapti** | `BOT_TOKEN`/`BOT_USERNAME` to'g'riligini va `APP_URL` aniq `https://` bilan boshlanishini tekshiring (webhook faqat HTTPS bilan ishlaydi). So'ng 9-qadamdagi `getWebhookInfo` buyrug'i bilan tasdiqlang. |
 | **Fayl yuklab bo'lmayapti** | `uploads/` va `data/` papkalari ilova foydalanuvchisiga tegishli va yozish huquqiga ega ekanini File Manager'da tekshiring. |
 | **Yangi fayl yukladim, lekin saytda hech narsa o'zgarmadi** | 1) Ilovani **Restart** qilishni unutmagansizmi (7-qadam)? Kod o'zgarganda bu shart. 2) Sayt PWA bo'lgani uchun brauzerda "service worker" ishlaydi — telefon/kompyuterda saytni to'liq yopib, keshni tozalab (yoki "Hard refresh": Ctrl+Shift+R) qayta oching. `git pull` orqali eng so'nggi kodni olganingizga ishonch hosil qiling (`git log -1` bilan tekshiring). |
-| **Telegram bot vaqti-vaqti bilan ishlamay qoladi / 409 xatosi** | Passenger bir nechta jarayon ochgan bo'lishi mumkin (yuqoridagi 3-qadamdagi eslatmaga qarang) — worker/instance sonini 1ga cheklang. |
+| **Bot sekin yoki umuman javob bermayapti** | 9-qadamdagi `getWebhookInfo` buyrug'ini ishga tushiring — `"last_error_message"` maydoni sababni ko'rsatadi (odatda `APP_URL` https emasligi yoki sertifikat muammosi). Agar bo'sh bo'lsa-yu baribir sekin bo'lsa, ixtiyoriy cron ping (9-qadam) qo'shing. |
 
 ## Keyinchalik yangilash
 

@@ -16,6 +16,7 @@ from app.routers import orgs as orgs_router
 from app.routers import push as push_router
 from app.routers import stats as stats_router
 from app.routers import tasks as tasks_router
+from app.routers import telegram as telegram_router
 from app.routers import users as users_router
 
 
@@ -48,6 +49,7 @@ app.include_router(users_router.router)
 app.include_router(stats_router.router)
 app.include_router(push_router.router)
 app.include_router(maintenance_router.router)
+app.include_router(telegram_router.router)
 
 
 @app.get("/admin/login")

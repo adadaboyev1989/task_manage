@@ -1,6 +1,6 @@
+import hashlib
 import html
 import threading
-import time
 import uuid
 from pathlib import Path
 
@@ -13,8 +13,11 @@ from app.db import get_db
 API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
 FILE_BASE = f"https://api.telegram.org/file/bot{BOT_TOKEN}"
 
-_offset = 0
-_running = False
+# Derived locally so no extra .env setting is needed — Telegram echoes this back on every
+# webhook POST (as the X-Telegram-Bot-Api-Secret-Token header) and we reject anything that
+# doesn't match, so random internet requests to this URL can't inject fake updates.
+WEBHOOK_SECRET = hashlib.sha256(BOT_TOKEN.encode()).hexdigest() if BOT_TOKEN else ""
+WEBHOOK_PATH = "/api/telegram/webhook"
 
 
 def is_configured() -> bool:
@@ -261,7 +264,7 @@ def _handle_start_payload(chat_id, payload: str, user: dict | None):
     return send_message(chat_id, "Noma'lum havola.")
 
 
-def _handle_update(update: dict):
+def handle_update(update: dict):
     message = update.get("message")
     if not message:
         return
@@ -302,32 +305,39 @@ def _handle_update(update: dict):
     return send_message(chat_id, "Noma'lum buyruq. Yordam uchun /start yozing.")
 
 
-def _poll_loop():
-    global _offset, _running
-    _running = True
-    print("[telegram] Long polling started")
-    while _running:
-        try:
-            updates = _api_call("getUpdates", {"offset": _offset, "timeout": 25, "allowed_updates": ["message"]})
-            for update in updates:
-                _offset = update["update_id"] + 1
-                try:
-                    _handle_update(update)
-                except Exception as err:  # noqa: BLE001
-                    print(f"[telegram] handle_update error: {err}")
-        except Exception as err:  # noqa: BLE001
-            print(f"[telegram] getUpdates failed: {err}")
-            time.sleep(3)
+def set_webhook():
+    if not is_configured():
+        return
+    if not APP_URL.startswith("https://"):
+        print(f"[telegram] APP_URL ({APP_URL}) is not https:// — Telegram requires HTTPS for webhooks, skipping setWebhook.")
+        return
+    try:
+        _api_call(
+            "setWebhook",
+            {
+                "url": f"{APP_URL}{WEBHOOK_PATH}",
+                "secret_token": WEBHOOK_SECRET,
+                "allowed_updates": ["message"],
+            },
+        )
+        print(f"[telegram] Webhook registered at {APP_URL}{WEBHOOK_PATH}")
+    except Exception as err:  # noqa: BLE001
+        print(f"[telegram] setWebhook failed: {err}")
 
 
 def start():
+    """Register the Telegram webhook (idempotent — safe to call from every worker process).
+
+    Runs setWebhook in a background thread so it never blocks app startup; unlike the old
+    getUpdates long-polling approach, calling this redundantly from multiple Passenger
+    worker processes causes no conflict (setWebhook is just a one-shot registration call,
+    not a persistent connection Telegram only allows one of at a time).
+    """
     if not is_configured():
         print("[telegram] BOT_TOKEN not set — Telegram bot disabled. Auth/notify features will not work until configured.")
         return
-    thread = threading.Thread(target=_poll_loop, daemon=True)
-    thread.start()
+    threading.Thread(target=set_webhook, daemon=True).start()
 
 
 def stop():
-    global _running
-    _running = False
+    pass
